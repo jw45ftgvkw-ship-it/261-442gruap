@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ДЗ и Расписание группы</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; background: #f3f4f6; color: #111827; }
+    header { background: #2563eb; color: white; padding: 16px; text-align: center; font-size: 20px; font-weight: 600; }
+    .tabs { display: flex; background: white; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; z-index: 10; }
+    .tab { flex: 1; padding: 12px; text-align: center; cursor: pointer; font-weight: 500; border-bottom: 3px solid transparent; }
+    .tab.active { color: #2563eb; border-bottom-color: #2563eb; background: #eff6ff; }
+    .container { max-width: 720px; margin: 16px auto; padding: 0 12px; }
+    .card { background: white; border-radius: 10px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    h3 { margin: 0 0 12px 0; font-size: 17px; }
+    input, select, textarea { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+    button { background: #2563eb; color: white; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; }
+    button:hover { background: #1d4ed8; }
+    .btn-del { background: #ef4444; padding: 6px 10px; font-size: 12px; margin-top: 8px; }
+    .btn-del:hover { background: #dc2626; }
+    .meta { font-size: 12px; color: #6b7280; margin-top: 6px; }
+    .badge { display: inline-block; background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+    .file-link { display: inline-block; margin-top: 8px; color: #2563eb; text-decoration: none; font-weight: 500; font-size: 14px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+<header>Учебный портал группы</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('hw')">Домашка</div>
+  <div class="tab" onclick="switchTab('sched')">Пары и предметы</div>
+  <div class="tab" onclick="switchTab('info')">Важная инфа</div>
+</div>
+
+<div class="container">
+  <div id="tab-hw">
+    <div class="card">
+      <h3>Добавить домашнее задание</h3>
+      <select id="hw-subject"></select>
+      <textarea id="hw-task" rows="3" placeholder="Что задали..."></textarea>
+      <input type="text" id="hw-deadline" placeholder="На какое число / дедлайн (например: 20 ноября)" />
+      <input type="text" id="hw-author" placeholder="Кто добавил (имя)" />
+      <input type="file" id="hw-file" />
+      <button onclick="addHomework()">Опубликовать ДЗ</button>
+    </div>
+    <div id="hw-list"></div>
+  </div>
+
+  <div id="tab-sched" class="hidden">
+    <div class="card">
+      <h3>Добавить предмет</h3>
+      <input type="text" id="subj-name" placeholder="Название предмета (например: Английский)" />
+      <button onclick="addSubject()">Добавить предмет</button>
+      <div id="subj-list" style="margin-top: 12px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Добавить пары на число</h3>
+      <input type="text" id="sched-date" placeholder="Дата и день (например: 18 ноября, Среда)" />
+      <textarea id="sched-lessons" rows="4" placeholder="1. Математика (каб. 204)&#10;2. Английский (каб. 105)"></textarea>
+      <button onclick="addSchedule()">Сохранить расписание</button>
+    </div>
+    <div id="sched-list"></div>
+  </div>
+
+  <div id="tab-info" class="hidden">
+    <div class="card">
+      <h3>Добавить объявление / важную инфу</h3>
+      <input type="text" id="info-title" placeholder="Заголовок" />
+      <textarea id="info-content" rows="3" placeholder="Текст, ссылки на чаты, контакты..."></textarea>
+      <button onclick="addInfo()">Добавить</button>
+    </div>
+    <div id="info-list"></div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = "https://byuhsfxuzywhotlndtqe.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_bMyOAy8_4NAwI74Clc6JSQ_UL3LtBzK ";
+
+  const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  function switchTab(name) {
+    ['hw', 'sched', 'info'].forEach(t => {
+      document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
+    });
+    document.querySelectorAll('.tab').forEach((el, idx) => {
+      el.classList.toggle('active', ['hw', 'sched', 'info'][idx] === name);
+    });
+  }
+
+  async function loadSubjects() {
+    const { data } = await db.from('subjects').select('*').order('id');
+    const select = document.getElementById('hw-subject');
+    const list = document.getElementById('subj-list');
+    select.innerHTML = '';
+    list.innerHTML = '';
+    (data || []).forEach(s => {
+      select.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+      list.innerHTML += `<span class="badge" style="margin-right:6px;">${s.name}</span>`;
+    });
+  }
+
+  async function addSubject() {
+    const name = document.getElementById('subj-name').value.trim();
+    if (!name) return alert('Введите название предмета');
+    await db.from('subjects').insert([{ name }]);
+    document.getElementById('subj-name').value = '';
+    loadSubjects();
+  }
+
+  async function loadHomework() {
+    const { data } = await db.from('homework').select('*, subjects(name)').order('id', { ascending: false });
+    const list = document.getElementById('hw-list');
+    list.innerHTML = '';
+    (data || []).forEach(h => {
+      const subjName = h.subjects ? h.subjects.name : 'Предмет';
+      const fileHtml = h.file_url ? `<div><a class="file-link" href="${h.file_url}" target="_blank">📎 Скачать файл: ${h.file_name || 'файл'}</a></div>` : '';
+      list.innerHTML += `
+        <div class="card">
+          <div class="badge">${subjName}</div>
+          <div style="white-space: pre-wrap;">${h.task}</div>
+          ${fileHtml}
+          <div class="meta">Срок: ${h.deadline || 'не указан'} | Добавил: ${h.author || 'Аноним'}</div>
+          <button class="btn-del" onclick="deleteItem('homework', ${h.id}, loadHomework)">Удалить</button>
+        </div>`;
+    });
+  }
+
+  async function addHomework() {
+    const subject_id = document.getElementById('hw-subject').value;
+    const task = document.getElementById('hw-task').value.trim();
+    const deadline = document.getElementById('hw-deadline').value.trim();
+    const author = document.getElementById('hw-author').value.trim();
+    const fileInput = document.getElementById('hw-file');
+
+    if (!subject_id) return alert('Сначала добавьте хотя бы один предмет во вкладке "Пары и предметы"');
+    if (!task) return alert('Напишите текст задания');
+
+    let file_url = null;
+    let file_name = null;
+
+    if (fileInput.files.length > 0) {
+      const file = fileInput.files[0];
+      const filePath = `${Date.now()}_${file.name}`;
+      const { error } = await db.storage.from('files').upload(filePath, file);
+      if (error) {
+        alert('Ошибка загрузки файла: ' + error.message);
+        return;
+      }
+      const { data: pub } = db.storage.from('files').getPublicUrl(filePath);
+      file_url = pub.publicUrl;
+      file_name = file.name;
+    }
+
+    await db.from('homework').insert([{ subject_id, task, deadline, author, file_url, file_name }]);
+    document.getElementById('hw-task').value = '';
+    document.getElementById('hw-deadline').value = '';
+    fileInput.value = '';
+    loadHomework();
+  }
+
+  async function loadSchedule() {
+    const { data } = await db.from('schedule').select('*').order('id', { ascending: false });
+    const list = document.getElementById('sched-list');
+    list.innerHTML = '';
+    (data || []).forEach(s => {
+      list.innerHTML += `
+        <div class="card">
+          <h3>${s.day_date}</h3>
+          <div style="white-space: pre-wrap;">${s.lessons}</div>
+          <button class="btn-del" onclick="deleteItem('schedule', ${s.id}, loadSchedule)">Удалить</button>
+        </div>`;
+    });
+  }
+
+  async function addSchedule() {
+    const day_date = document.getElementById('sched-date').value.trim();
+    const lessons = document.getElementById('sched-lessons').value.trim();
+    if (!day_date || !lessons) return alert('Заполните дату и пары');
+    await db.from('schedule').insert([{ day_date, lessons }]);
+    document.getElementById('sched-date').value = '';
+    document.getElementById('sched-lessons').value = '';
+    loadSchedule();
+  }
+
+  async function loadInfo() {
+    const { data } = await db.from('info').select('*').order('id', { ascending: false });
+    const list = document.getElementById('info-list');
+    list.innerHTML = '';
+    (data || []).forEach(i => {
+      list.innerHTML += `
+        <div class="card">
+          <h3>${i.title}</h3>
+          <div style="white-space: pre-wrap;">${i.content}</div>
+          <button class="btn-del" onclick="deleteItem('info', ${i.id}, loadInfo)">Удалить</button>
+        </div>`;
+    });
+  }
+
+  async function addInfo() {
+    const title = document.getElementById('info-title').value.trim();
+    const content = document.getElementById('info-content').value.trim();
+    if (!title || !content) return alert('Заполните заголовок и текст');
+    await db.from('info').insert([{ title, content }]);
+    document.getElementById('info-title').value = '';
+    document.getElementById('info-content').value = '';
+    loadInfo();
+  }
+
+  async function deleteItem(table, id, reloadFn) {
+    if (!confirm('Удалить запись?')) return;
+    await db.from(table).delete().eq('id', id);
+    reloadFn();
+  }
+
+  loadSubjects();
+  loadHomework();
+  loadSchedule();
+  loadInfo();
+</script>
+</body>
+</html>
